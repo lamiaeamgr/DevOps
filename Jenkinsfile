@@ -103,7 +103,7 @@ pipeline {
         unstable {
             slackSend(
                 color: 'warning',
-                message: "[Backend] Pipeline instable: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME})",
+                message: "[Backend] Pipeline instable:${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME})",
                 channel: "${SLACK_CHANNEL_BACKEND}"
             )
         }
