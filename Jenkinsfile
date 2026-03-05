@@ -43,7 +43,7 @@ pipeline {
                 withSonarQubeEnv('SonarQube') {
                     sh '''
                         npm ci
-                        npx sonar-scanner \
+                        sonar-scanner \
                             -Dsonar.projectKey=miniprojet-devops-backend \
                             -Dsonar.sources=src \
                             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
