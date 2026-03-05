@@ -1,0 +1,112 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_COMPOSE = 'docker compose'
+        SLACK_CHANNEL_FRONTEND = env.SLACK_CHANNEL_FRONTEND ?: '#devops-frontend'
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Frontend - Lint & Test') {
+            steps {
+                sh 'npm ci'
+                sh 'npm run lint'
+                sh 'CI=true npm run test'
+            }
+            post {
+                always {
+                    publishHTML(target: [allowMissing: true, reportDir: 'coverage/lcov-report', reportFiles: 'index.html', reportName: 'Frontend Coverage'])
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        npm ci
+                        CI=true npm run test -- --coverage --watchAll=false
+                        npx sonar-scanner \
+                            -Dsonar.projectKey=miniprojet-devops-frontend \
+                            -Dsonar.sources=src \
+                            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "${DOCKER_COMPOSE} build --no-cache"
+            }
+        }
+
+        stage('Deploy (Docker Compose)') {
+            when {
+                anyOf {
+                    branch 'main'
+                }
+            }
+            steps {
+                sh "${DOCKER_COMPOSE} down --remove-orphans || true"
+                sh "${DOCKER_COMPOSE} up -d --build"
+            }
+        }
+    }
+
+    post {
+        success {
+            slackSend(
+                color: 'good',
+                message: "[Frontend] Pipeline réussi: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME})",
+                channel: "${SLACK_CHANNEL_FRONTEND}"
+            )
+        }
+        failure {
+            slackSend(
+                color: 'danger',
+                message: "[Frontend] Pipeline en échec: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME})",
+                channel: "${SLACK_CHANNEL_FRONTEND}"
+            )
+        }
+        unstable {
+            slackSend(
+                color: 'warning',
+                message: "[Frontend] Pipeline instable: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME})",
+                channel: "${SLACK_CHANNEL_FRONTEND}"
+            )
+        }
+    }
+}
